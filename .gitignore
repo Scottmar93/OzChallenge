@@ -1,0 +1,57 @@
+*.txt
+*.pdf
+*.tmp
+/local/
+
+# don't ignore important .txt files
+!requirements*
+!LICENSE.txt
+
+# running files
+*.pyc
+*.py~
+.~lock*
+
+# Python cache
+*__pycache__/
+*.cache
+.ipynb_checkpoints/
+
+# Sphinx build files
+docs/_build/
+docs/build/
+build/
+
+# data
+data/
+
+# inputs except parameters
+input/*
+!input/parameters
+
+# simulation outputs
+out/
+
+# ideas
+ideas/
+.idea/
+
+# setup.py files
+*.egg-info
+dist/
+
+# coverage
+.coverage
+coverage.xml
+
+# black setup file seems to make Travis CI fail
+pyproject.toml
+
+# virtual enviroment
+venv/
+bin/
+etc/
+lib/
+lib64
+share/
+pyvenv.cfg
