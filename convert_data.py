@@ -1,5 +1,4 @@
 from osgeo import gdal
-import io
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -12,7 +11,7 @@ def make_row(x_pix, y_pix, padfTrans, field):
     x = padfTrans[0] + x_pix * padfTrans[1] + y_pix * padfTrans[2]
     y = padfTrans[3] + x_pix * padfTrans[4] + y_pix * padfTrans[5]
 
-    return [[x, y, field[x_pix, y_pix]]]
+    return x, y, field[x_pix, y_pix]
 
 
 # load data
@@ -32,8 +31,8 @@ for mine in mines_dbf:
     else:
         mines = np.append(mines, [[mine["LONGITUDE"], mine["LATITUDE"]]], axis=0)
 
-gravity = gdal_array.LoadFile(gravity_filepath)
-magnetic = gdal_array.LoadFile(magnetic_filepath)
+gravity = gdal_array.LoadFile(gravity_filepath).T
+magnetic = gdal_array.LoadFile(magnetic_filepath).T
 
 
 # plt.ion()
@@ -57,20 +56,14 @@ y_pixels = np.arange(gravity_raster.RasterYSize)
 # now convert to lon lat
 padfTransform = gravity_raster.GetGeoTransform()
 
-x_pixels = np.arange(10)
-y_pixels = np.arange(10)
 
-xy_gravity = None
+xy_gravity = np.zeros((gravity_raster.RasterXSize * gravity_raster.RasterYSize, 3))
 
+count = 0
 for x_pixel in x_pixels:
     for y_pixel in y_pixels:
-        if xy_gravity is None:
-            xy_gravity = make_row(x_pixel, y_pixel, padfTransform, gravity)
-        else:
-            print(x_pixel, y_pixel)
-            xy_gravity = np.append(
-                xy_gravity, make_row(x_pixel, y_pixel, padfTransform, gravity), axis=0
-            )
+        xy_gravity[count, :] = make_row(x_pixel, y_pixel, padfTransform, gravity)
+        count += 1
 
 # create magnetic triple
 magnetic_raster = gdal.Open(magnetic_filepath)
@@ -81,20 +74,13 @@ y_pixels = np.arange(magnetic_raster.RasterYSize)
 # now convert to lon lat
 padfTransform = magnetic_raster.GetGeoTransform()
 
-x_pixels = np.arange(10)
-y_pixels = np.arange(10)
+xy_magnetic = np.zeros((magnetic_raster.RasterXSize * magnetic_raster.RasterYSize, 3))
 
-xy_magnetic = None
-
+count = 0
 for x_pixel in x_pixels:
     for y_pixel in y_pixels:
-        if xy_magnetic is None:
-            xy_magnetic = make_row(x_pixel, y_pixel, padfTransform, magnetic)
-        else:
-            print(x_pixel, y_pixel)
-            xy_magnetic = np.append(
-                xy_magnetic, make_row(x_pixel, y_pixel, padfTransform, magnetic), axis=0
-            )
+        xy_magnetic[count, :] = make_row(x_pixel, y_pixel, padfTransform, magnetic)
+        count += 1
 
 
 # just values
@@ -106,69 +92,3 @@ np.savetxt("data/csv_files/magnetic_matrix.csv", magnetic, delimiter=",")
 np.savetxt("data/csv_files/mines.csv", mines, delimiter=",")
 np.savetxt("data/csv_files/gravity.csv", xy_gravity, delimiter=",")
 np.savetxt("data/csv_files/magnetic.csv", xy_magnetic, delimiter=",")
-
-
-# x = np.arange(gravity_raster.RasterXSize)
-# y = np.arange(gravity_raster.RasterYSize)
-# posX = px_w * x + rot1 * y + xoffset
-# posY = rot2 * x + px_h * y + yoffset
-#
-# # shift to the center of the pixel
-# posX += px_w / 2.0
-# posY += px_h / 2.0
-#
-# # coords = gravity_raster.GetProjectionRef()
-# #
-# # print(coords)
-#
-# print(xoffset, px_w, rot1, yoffset, px_h, rot2)
-
-# print(posX)
-
-#
-# # Check type of the variable 'raster'
-# type(raster)
-#
-# # Projection
-# raster.GetProjection()
-
-# # Dimensions
-# n_x = raster.RasterXSize
-# n_y = raster.RasterYSize
-#
-# # Number of bands
-# raster.RasterCount
-#
-# # Metadata for the raster dataset
-# raster.GetMetadata()
-#
-# # Read the raster band as separate variable
-# band = raster.GetRasterBand(1)
-#
-# # Check type of the variable 'band'
-# type(band)
-#
-# # Data type of the values
-# gdal.GetDataTypeName(band.DataType)
-#
-#
-# # Compute statistics if needed
-# if band.GetMinimum() is None or band.GetMaximum()is None:
-#     band.ComputeStatistics(0)
-#     print("Statistics computed.")
-#
-# # Fetch metadata for the band
-# band.GetMetadata()
-#
-# # Print only selected metadata:
-# print("[ NO DATA VALUE ] = ", band.GetNoDataValue())  # none
-# print("[ MIN ] = ", band.GetMinimum())
-# print("[ MAX ] = ", band.GetMaximum())
-
-
-# rasterArray = raster.ReadAsArray()
-#
-# print(rasterArray)
-# x = np.arange(n_x)
-# y = np.arange(n_y)
-# X, Y = np.meshgrid(x, y)
