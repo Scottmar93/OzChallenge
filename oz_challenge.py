@@ -5,22 +5,37 @@ import matplotlib.pyplot as plt
 
 from osgeo import gdal_array
 
+import dbfread
+
 # load data
-gravity_filepath = "data/SA_GRAV.ers"
-magnetic_filepath = "data/SA_TMI_RTP.ers"
+mines_filepath = "data/mines/copper_containted_resource.dbf"
+gravity_filepath = "data/gravity/SA_GRAV.ers"
+magnetic_filepath = "data/magnetic/SA_TMI_RTP.ers"
+
+mines_dbf = dbfread.DBF(mines_filepath)
+
+# convert mines to
+
+mines = [[]]
+
+for mine in mines_dbf:
+    mines = np.append(mines, [[mine["LONGITUDE"], mine["LATITUDE"]]])
+
+print(mines)
 
 gravity = gdal_array.LoadFile(gravity_filepath)
 magnetic = gdal_array.LoadFile(magnetic_filepath)
 
-plt.ion()
 
-plt.contourf(gravity)
-plt.show()
-
-plt.contourf(magnetic)
-plt.show()
-
-
+# plt.ion()
+#
+# plt.contourf(gravity)
+# plt.show()
+#
+# plt.contourf(magnetic)
+# plt.show()
+#
+#
 # Open the file:
 gravity_raster = gdal.Open(gravity_filepath)
 
@@ -28,20 +43,20 @@ gravity_raster = gdal.Open(gravity_filepath)
 xoffset, rot1, px_w, yoffset, rot2, px_h = gravity_raster.GetGeoTransform()
 
 
-x = np.arange(gravity_raster.RasterXSize)
-y = np.arange(gravity_raster.RasterYSize)
-posX = px_w * x + rot1 * y + xoffset
-posY = rot2 * x + px_h * y + yoffset
-
-# shift to the center of the pixel
-posX += px_w / 2.0
-posY += px_h / 2.0
-
-# coords = gravity_raster.GetProjectionRef()
+# x = np.arange(gravity_raster.RasterXSize)
+# y = np.arange(gravity_raster.RasterYSize)
+# posX = px_w * x + rot1 * y + xoffset
+# posY = rot2 * x + px_h * y + yoffset
 #
-# print(coords)
-
-print(xoffset, px_w, rot1, yoffset, px_h, rot2)
+# # shift to the center of the pixel
+# posX += px_w / 2.0
+# posY += px_h / 2.0
+#
+# # coords = gravity_raster.GetProjectionRef()
+# #
+# # print(coords)
+#
+# print(xoffset, px_w, rot1, yoffset, px_h, rot2)
 
 # print(posX)
 
