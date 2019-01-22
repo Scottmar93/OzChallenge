@@ -14,14 +14,15 @@ magnetic_filepath = "data/magnetic/SA_TMI_RTP.ers"
 
 mines_dbf = dbfread.DBF(mines_filepath)
 
-# convert mines to
-
-mines = []
-
+# convert mines to an array of [ [long, lat] ] coords
+mines = None
 for mine in mines_dbf:
-    mines = np.append(mines, [[mine["LONGITUDE"], mine["LATITUDE"]]], axis=0)
 
-print(mines)
+    if mines is None:
+        print("hello")
+        mines = [[mine["LONGITUDE"], mine["LATITUDE"]]]
+    else:
+        mines = np.append(mines, [[mine["LONGITUDE"], mine["LATITUDE"]]], axis=0)
 
 gravity = gdal_array.LoadFile(gravity_filepath)
 magnetic = gdal_array.LoadFile(magnetic_filepath)
