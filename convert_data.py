@@ -1,11 +1,19 @@
 from osgeo import gdal
-
+import io
 import numpy as np
 import matplotlib.pyplot as plt
 
 from osgeo import gdal_array
 
 import dbfread
+
+
+def make_row(x_pix, y_pix, padfTrans, field):
+    x = padfTrans[0] + x_pix * padfTrans[1] + y_pix * padfTrans[2]
+    y = padfTrans[3] + x_pix * padfTrans[4] + y_pix * padfTrans[5]
+
+    return [[x, y, field[x_pix, y_pix]]]
+
 
 # load data
 mines_filepath = "data/mines/copper_containted_resource.dbf"
@@ -38,9 +46,66 @@ magnetic = gdal_array.LoadFile(magnetic_filepath)
 #
 #
 # Open the file:
+
+
+# converty the gravity stuff into triples
 gravity_raster = gdal.Open(gravity_filepath)
 
-xoffset, rot1, px_w, yoffset, rot2, px_h = gravity_raster.GetGeoTransform()
+x_pixels = np.arange(gravity_raster.RasterXSize)
+y_pixels = np.arange(gravity_raster.RasterYSize)
+
+# now convert to lon lat
+padfTransform = gravity_raster.GetGeoTransform()
+
+x_pixels = np.arange(10)
+y_pixels = np.arange(10)
+
+xy_gravity = None
+
+for x_pixel in x_pixels:
+    for y_pixel in y_pixels:
+        if xy_gravity is None:
+            xy_gravity = make_row(x_pixel, y_pixel, padfTransform, gravity)
+        else:
+            print(x_pixel, y_pixel)
+            xy_gravity = np.append(
+                xy_gravity, make_row(x_pixel, y_pixel, padfTransform, gravity), axis=0
+            )
+
+# create magnetic triple
+magnetic_raster = gdal.Open(magnetic_filepath)
+
+x_pixels = np.arange(magnetic_raster.RasterXSize)
+y_pixels = np.arange(magnetic_raster.RasterYSize)
+
+# now convert to lon lat
+padfTransform = magnetic_raster.GetGeoTransform()
+
+x_pixels = np.arange(10)
+y_pixels = np.arange(10)
+
+xy_magnetic = None
+
+for x_pixel in x_pixels:
+    for y_pixel in y_pixels:
+        if xy_magnetic is None:
+            xy_magnetic = make_row(x_pixel, y_pixel, padfTransform, magnetic)
+        else:
+            print(x_pixel, y_pixel)
+            xy_magnetic = np.append(
+                xy_magnetic, make_row(x_pixel, y_pixel, padfTransform, magnetic), axis=0
+            )
+
+
+# just values
+np.savetxt("data/csv_files/gravity_matrix.csv", gravity, delimiter=",")
+np.savetxt("data/csv_files/magnetic_matrix.csv", magnetic, delimiter=",")
+
+
+# long lat coords and value
+np.savetxt("data/csv_files/mines.csv", mines, delimiter=",")
+np.savetxt("data/csv_files/gravity.csv", xy_gravity, delimiter=",")
+np.savetxt("data/csv_files/magnetic.csv", xy_magnetic, delimiter=",")
 
 
 # x = np.arange(gravity_raster.RasterXSize)
