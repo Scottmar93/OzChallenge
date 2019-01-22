@@ -3,9 +3,27 @@ import matplotlib.pyplot as plt
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.ensemble import IsolationForest
 from scipy.interpolate import RectBivariateSpline
+import subprocess
 import sys
 
 preprocess_data = True
+
+# change the round factor if you like
+r = 1
+sizes = []
+screens = [l.split()[-3:] for l in subprocess.check_output(["xrandr"]).decode("utf-8").strip().splitlines() if " connected" in l]
+for s in screens:
+    w = float(s[0].replace("mm", "")); h = float(s[2].replace("mm", "")); d = ((w**2)+(h**2))**(0.5)
+    sizes.append([2*round(n/25.4, r) for n in [w, h, d]])
+
+plt.rc('text', usetex=True)
+plt.rc('text.latex', preamble=r'\usepackage{amsfonts}')
+plt.rc('font', family='serif', size=22)
+plt.rc('xtick', labelsize=24)     
+plt.rc('ytick', labelsize=24)
+
+plt.ion()
+
 
 def unique_tol(A):
     _,idx = np.unique(A.round(decimals=9), return_index=True)
@@ -54,12 +72,14 @@ if preprocess_data == True:
     spg = RectBivariateSpline(ugx, ugy, g[:,2].reshape((len(ugy), len(ugx))).T)
 
     BB = spB(x,y)
+    gradBB = np.sqrt(spB(x,y,dx=1)**2 + spB(x,y,dy=1)**2)
     gg = spg(x,y)
+    gradgg = np.sqrt(spg(x,y,dx=1)**2 + spg(x,y,dy=1)**2)
 
     X,Y = np.meshgrid(x,y)
 
-    B_reduced = np.vstack([X.flatten(), Y.flatten(), BB.flatten()]).T
-    g_reduced = np.vstack([X.flatten(), Y.flatten(), gg.flatten()]).T
+    B_reduced = np.vstack([X.flatten(), Y.flatten(), BB.flatten(), gradBB.flatten()]).T
+    g_reduced = np.vstack([X.flatten(), Y.flatten(), gg.flatten(), gradgg.flatten()]).T
 
     np.savetxt("reduced_magnetic.csv", B_reduced, delimiter=",")
     np.savetxt("reduced_gravity.csv",  g_reduced, delimiter=",")
@@ -80,12 +100,9 @@ else:
     BB = B[:,2].reshape((Nx, Ny))
     gg = g[:,2].reshape((Nx, Ny))
 
+    gradBB = B[:,3].reshape((Nx, Ny))
+    gradgg = g[:,3].reshape((Nx, Ny))
 
-plt.ion()
-
-plt.figure()
-
-plt.contourf(x,y,gg.T)
 
 outliers = np.zeros((Nx, Ny), dtype=bool)
 
@@ -104,11 +121,29 @@ for i in range(0,Nx,k):
     for j in range(0,Ny,k):
         aux1 = np.arange(tx(i-k), tx(i+k)+1)
         aux2 = np.arange(ty(j-k), ty(j+k)+1)
-        T = np.vstack([BB[aux1,:][:,aux2].flatten(), gg[aux1,:][:,aux2].flatten()]).T
+        #T = np.vstack([BB[aux1,:][:,aux2].flatten(), gg[aux1,:][:,aux2].flatten()]).T
+        T = np.vstack([BB[aux1,:][:,aux2].flatten(), gradBB[aux1,:][:,aux2].flatten(), gg[aux1,:][:,aux2].flatten(), gradgg[aux1,:][:,aux2].flatten()]).T
         y_pred = (clf.fit_predict(T).reshape((len(aux1), len(aux2)))-1).astype(bool)
         s = int(k/4)
         outliers[aux1[s]:aux1[-s],aux2[s]:aux2[-s]] |= y_pred[s:-s,s:-s] # logical OR
     print("ciao")
 
 
-plt.figure(); plt.contourf(x,y,outliers.T, levels=1)
+fig = plt.figure(1, figsize=sizes[0][:-1])
+fig.patch.set_facecolor("white")
+
+plt.subplot(2,2,1)
+plt.contourf(x,y,gg.T)
+
+plt.subplot(2,2,2)
+plt.contourf(x,y,BB.T)
+
+plt.subplot(2,2,3)
+plt.contourf(x,y,gradgg.T)
+
+plt.subplot(2,2,4)
+plt.contourf(x,y,gradBB.T)
+
+fig = plt.figure(2, figsize=sizes[0][:-1])
+fig.patch.set_facecolor("white")
+plt.contourf(x,y,outliers.T, levels=1)
