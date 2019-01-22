@@ -16,10 +16,10 @@ mines_dbf = dbfread.DBF(mines_filepath)
 
 # convert mines to
 
-mines = [[]]
+mines = []
 
 for mine in mines_dbf:
-    mines = np.append(mines, [[mine["LONGITUDE"], mine["LATITUDE"]]])
+    mines = np.append(mines, [[mine["LONGITUDE"], mine["LATITUDE"]]], axis=0)
 
 print(mines)
 
@@ -38,7 +38,6 @@ magnetic = gdal_array.LoadFile(magnetic_filepath)
 #
 # Open the file:
 gravity_raster = gdal.Open(gravity_filepath)
-
 
 xoffset, rot1, px_w, yoffset, rot2, px_h = gravity_raster.GetGeoTransform()
 
