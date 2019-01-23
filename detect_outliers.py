@@ -34,12 +34,14 @@ if preprocess_data == True:
 
     # load data
     B = np.genfromtxt("./magnetic.csv", delimiter=",")
+    B1V = np.genfromtxt("./magnetic_1VD.csv", delimiter=",")
     g = np.genfromtxt("./gravity.csv", delimiter=",")
     mines = np.genfromtxt("./mines.csv", delimiter=",")
 
     print("Data loaded! Shapes: %s, %s, %s" % (B.shape, g.shape, mines.shape))
 
     B[:,1] = np.abs(B[:,1])
+    B1V[:,1] = np.abs(B1V[:,1])
     g[:,1] = np.abs(g[:,1])
     mines[:,1] = np.abs(mines[:,1])
 
@@ -47,25 +49,32 @@ if preprocess_data == True:
     for i in range(2):
         xymin = min(B[:,i].min(), g[:,i].min())
         B[:,i] -= xymin
+        B1V[:,i] -= xymin
         g[:,i] -= xymin
         mines[:,i] -= xymin
 
+    xymin = [max(B[:,i].min(), g[:,i].min()) for i in range(2)]
     xymax = [max(B[:,i].max(), g[:,i].max()) for i in range(2)]
-    mines = np.vstack([mine for mine in mines if mine[0] <= xymax[0] and mine[1] <= xymax[1]])
+    mines = np.vstack([mine for mine in mines if (mine[0] <= xymax[0] and mine[1] <= xymax[1])])
 
     B[:,2] = (B[:,2] - np.mean(B[:,2]))/np.std(B[:,2])
+    B1V[:,2] = (B1V[:,2] - np.mean(B1V[:,2]))/np.std(B1V[:,2])
     g[:,2] = (g[:,2] - np.mean(g[:,2]))/np.std(g[:,2])
 
-    Nx = 600
-    Ny = 600
-    x = np.linspace(xymax[0]/3,2/3*xymax[0], Nx)
-    y = np.linspace(xymax[1]/3,2/3*xymax[1], Ny)
+    Nx = 1700
+    Ny = 1300
+    x = np.linspace(xymin[0],xymax[0], Nx)
+    y = np.linspace(xymin[1],xymax[1], Ny)
 
     uBx = unique_tol(B[:,0])
     uBy = unique_tol(B[:,1])
     spB = RectBivariateSpline(uBx, uBy, B[:,2].reshape((len(uBy), len(uBx))).T)
 
-    print("Original mesh sizes (x, y): (%f, %f), new mesh sizes (x, y): (%f, %f)" % (uBx[1]-uBx[0], uBy[1]-uBy[0], xymax[0]/3/Nx, xymax[1]/3/Ny))
+    print("Original mesh sizes (x, y): (%f, %f), new mesh sizes (x, y): (%f, %f)" % (uBx[1]-uBx[0], uBy[1]-uBy[0], (xymax[0] - xymin[0])/Nx, (xymax[1] - xymin[1])/Ny))
+
+    uB1Vx = unique_tol(B1V[:,0])
+    uB1Vy = unique_tol(B1V[:,1])
+    spB1V = RectBivariateSpline(uB1Vx, uB1Vy, B1V[:,2].reshape((len(uB1Vy), len(uB1Vx))).T)
 
     ugx = unique_tol(g[:,0])
     ugy = unique_tol(g[:,1])
@@ -73,20 +82,24 @@ if preprocess_data == True:
 
     BB = spB(x,y)
     gradBB = np.sqrt(spB(x,y,dx=1)**2 + spB(x,y,dy=1)**2)
+    BB1V = spB1V(x,y)
     gg = spg(x,y)
     gradgg = np.sqrt(spg(x,y,dx=1)**2 + spg(x,y,dy=1)**2)
 
     X,Y = np.meshgrid(x,y)
 
     B_reduced = np.vstack([X.flatten(), Y.flatten(), BB.flatten(), gradBB.flatten()]).T
+    B1V_reduced = np.vstack([X.flatten(), Y.flatten(), BB1V.flatten()]).T
     g_reduced = np.vstack([X.flatten(), Y.flatten(), gg.flatten(), gradgg.flatten()]).T
 
     np.savetxt("reduced_magnetic.csv", B_reduced, delimiter=",")
+    np.savetxt("reduced_magnetic1V.csv", B1V_reduced, delimiter=",")
     np.savetxt("reduced_gravity.csv",  g_reduced, delimiter=",")
 
 else:
 
     B = np.genfromtxt("reduced_magnetic.csv", delimiter=",")
+    B1V = np.genfromtxt("reduced_magnetic1V.csv", delimiter=",")
     g = np.genfromtxt("reduced_gravity.csv", delimiter=",")
 
     print("Data loaded!")
@@ -98,6 +111,7 @@ else:
     Y = B[:,1].reshape((Nx, Ny))
 
     BB = B[:,2].reshape((Nx, Ny))
+    BB1V = B1V[:,2].reshape((Nx, Ny))
     gg = g[:,2].reshape((Nx, Ny))
 
     gradBB = B[:,3].reshape((Nx, Ny))
@@ -121,8 +135,7 @@ for i in range(0,Nx,k):
     for j in range(0,Ny,k):
         aux1 = np.arange(tx(i-k), tx(i+k)+1)
         aux2 = np.arange(ty(j-k), ty(j+k)+1)
-        #T = np.vstack([BB[aux1,:][:,aux2].flatten(), gg[aux1,:][:,aux2].flatten()]).T
-        T = np.vstack([BB[aux1,:][:,aux2].flatten(), gradBB[aux1,:][:,aux2].flatten(), gg[aux1,:][:,aux2].flatten(), gradgg[aux1,:][:,aux2].flatten()]).T
+        T = np.vstack([BB[aux1,:][:,aux2].flatten(), gg[aux1,:][:,aux2].flatten(), gradBB[aux1,:][:,aux2].flatten(), gradgg[aux1,:][:,aux2].flatten(), BB1V[aux1,:][:,aux2].flatten()]).T
         y_pred = (clf.fit_predict(T).reshape((len(aux1), len(aux2)))-1).astype(bool)
         s = int(k/4)
         outliers[aux1[s]:aux1[-s],aux2[s]:aux2[-s]] |= y_pred[s:-s,s:-s] # logical OR
@@ -132,18 +145,32 @@ for i in range(0,Nx,k):
 fig = plt.figure(1, figsize=sizes[0][:-1])
 fig.patch.set_facecolor("white")
 
-plt.subplot(2,2,1)
+plt.subplot(2,3,1)
 plt.contourf(x,y,gg.T)
+plt.title("gravity")
 
-plt.subplot(2,2,2)
+plt.subplot(2,3,2)
 plt.contourf(x,y,BB.T)
+plt.title("magnetic field")
 
-plt.subplot(2,2,3)
+plt.subplot(2,3,3)
+plt.contourf(x,y,BB1V.T)
+plt.title("magnetic 1st vert. derivative")
+
+plt.subplot(2,3,4)
 plt.contourf(x,y,gradgg.T)
+plt.title("gravity gradient norm")
 
-plt.subplot(2,2,4)
+plt.subplot(2,3,5)
 plt.contourf(x,y,gradBB.T)
+plt.title("magnetic gradient norm")
 
-fig = plt.figure(2, figsize=sizes[0][:-1])
-fig.patch.set_facecolor("white")
+#fig = plt.figure(2, figsize=sizes[0][:-1])
+#fig.patch.set_facecolor("white")
+plt.subplot(2,3,6)
 plt.contourf(x,y,outliers.T, levels=1)
+plt.title("anomalies")
+
+fig.tight_layout()
+
+plt.savefig('/home/croci/anomalies.eps', format='eps', dpi=1200)
