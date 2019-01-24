@@ -16,8 +16,8 @@ mpiSize = worldComm.Get_size()
 preprocess_data = False
 plot_results = True
 load_results = True
-extra_filter = True
-cluster      = False
+run_global   = False
+extra_filter = False
 
 region = 1
 
@@ -35,7 +35,7 @@ plt.rc('font', family='serif', size=22)
 plt.rc('xtick', labelsize=24)     
 plt.rc('ytick', labelsize=24)
 
-plt.ion()
+#plt.ion()
 
 def unique_tol(A):
     _,idx = np.unique(A.round(decimals=9), return_index=True)
@@ -129,8 +129,8 @@ else:
     x = unique_tol(B[:,0]); Nx = len(x)
     y = unique_tol(B[:,1]); Ny = len(y)
 
-    X = B[:,0].reshape((Ny, Nx)).T
-    Y = B[:,1].reshape((Ny, Nx)).T
+    X = B[:,0].reshape((Nx, Ny))
+    Y = B[:,1].reshape((Nx, Ny))
 
     BB = B[:,2].reshape((Nx, Ny))
     BB1V = B1V[:,2].reshape((Nx, Ny))
@@ -142,22 +142,30 @@ else:
 
 if load_results == False:
 
-    k = 60
+    k = 30
 
     def tx(s):
-        return min(max(s,0), Nx-1)
+        return min(max(s,0), Nx)
 
     def ty(s):
-        return min(max(s,0), Ny-1)
+        return min(max(s,0), Ny)
 
-    #clf = IsolationForest(behaviour='new', max_samples="auto",contamination=0.05)
-    #T = np.vstack([BB.flatten(), gg.flatten(), gradBB.flatten(), gradgg.flatten(), BB1V.flatten()]).T
-    #filter_outliers = (clf.fit_predict(T)-1).astype(bool).reshape(BB.shape)
+    if mpiRank == 0 and run_global == True:
+        clf = IsolationForest(behaviour='new', max_samples="auto",contamination=0.05)
+        T = np.vstack([BB.flatten(), gg.flatten(), gradBB.flatten(), gradgg.flatten(), BB1V.flatten()]).T
+        filter_outliers = (clf.fit_predict(T)-1).astype(bool).reshape(BB.shape)
+        np.savez("temp%d.npz" % region, filter_outliers = filter_outliers)
+
+    worldComm.barrier()
+
+    filter_outliers = np.load("temp%d.npz" % region)["filter_outliers"]
+
+    worldComm.barrier()
+    if mpiRank == 0:
+        print("First outlier filtered!")
 
     outliers       = np.zeros((Nx, Ny), dtype=bool)
     outliers_score = np.zeros((Nx, Ny))
-
-    clf = IsolationForest(behaviour='new', max_samples=0.1,contamination=0.005)
 
     NNx = np.arange(0,Nx,k)
     NNy = np.arange(0,Ny,k)
@@ -184,13 +192,15 @@ if load_results == False:
     for iteration,(i,j) in enumerate(my_Np):
         aux1 = np.arange(tx(i-k), tx(i+k)+1)
         aux2 = np.arange(ty(j-k), ty(j+k)+1)
-        T = np.vstack([BB[aux1,:][:,aux2].flatten(), gg[aux1,:][:,aux2].flatten(), gradBB[aux1,:][:,aux2].flatten(), gradgg[aux1,:][:,aux2].flatten(), BB1V[aux1,:][:,aux2].flatten()]).T
-        clf.fit(T)
-        y_pred = (clf.predict(T).reshape((len(aux1), len(aux2)))-1).astype(bool)
-        y_pred_score = clf.score_samples(T).reshape((len(aux1), len(aux2)))
-        s = int(k/4)
-        outliers[aux1[s]:aux1[-s],aux2[s]:aux2[-s]] |= y_pred[s:-s,s:-s] # logical OR
-        outliers_score[aux1[s]:aux1[-s],aux2[s]:aux2[-s]] = np.minimum(outliers_score[aux1[s]:aux1[-s],aux2[s]:aux2[-s]], y_pred_score[s:-s,s:-s])
+        aux3 = filter_outliers[aux1[0]:aux1[-1],aux2[0]:aux2[-1]]
+        if np.sum(aux3) == 0:
+            continue
+        T = np.vstack([BB[aux1[0]:aux1[-1],aux2[0]:aux2[-1]][aux3], gg[aux1[0]:aux1[-1],aux2[0]:aux2[-1]][aux3], gradBB[aux1[0]:aux1[-1],aux2[0]:aux2[-1]][aux3], gradgg[aux1[0]:aux1[-1],aux2[0]:aux2[-1]][aux3], BB1V[aux1[0]:aux1[-1],aux2[0]:aux2[-1]][aux3]]).T
+        clf = IsolationForest(behaviour='new', max_samples=min(int(0.1*T.shape[0])+2,T.shape[0]),contamination=0.00001)
+        y_pred = (clf.fit_predict(T)-1).astype(bool)
+        temp = outliers[aux1[0]:aux1[-1], aux2[0]:aux2[-1]].copy()
+        temp[aux3] |= y_pred
+        outliers[aux1[0]:aux1[-1], aux2[0]:aux2[-1]] = temp.copy()
 
         if mpiRank == 0:
             stdout.write('\r')
@@ -210,64 +220,26 @@ if load_results == False:
     if mpiRank == 0:
         outlier_datas = [np.load("outlier_data_temp%d.npz" % i) for i in range(mpiSize)]
         outliers = reduce(np.maximum, [item["outliers"] for item in outlier_datas])
-        outliers_scores = reduce(np.minimum, [item["outliers_score"] for item in outlier_datas])
-        np.savez("./small_region_%d/outlier_data.npz" % region, outliers = outliers, outliers_scores = outliers_scores)
+        np.savez("./small_region_%d/outlier_data_rev.npz" % region, outliers = outliers)
 
         print("MPI reduction complete")
 
 else:
-    outlier_data = np.load("./small_region_%d/outlier_data.npz" % region)
+    outlier_data = np.load("./small_region_%d/outlier_data_rev.npz" % region)
     outliers = outlier_data["outliers"]
-    outliers_scores = outlier_data["outliers_scores"]
 
 if mpiRank == 0 and extra_filter == True:
     new_outliers       = np.zeros((Nx, Ny), dtype=bool)
-    new_outliers_score = np.zeros((Nx, Ny))
     clf = IsolationForest(behaviour='new', max_samples="auto",contamination=0.3)
     T = np.vstack([BB[outliers], gg[outliers], gradBB[outliers], gradgg[outliers], BB1V[outliers]]).T
-    clf.fit(T)
-    y_pred = (clf.predict(T)-1).astype(bool)
-    y_pred_score = clf.score_samples(T)
+    y_pred = (clf.fit_predict(T)-1).astype(bool)
     new_outliers[outliers] = y_pred
-
-plt.close("all")
-
-if cluster == True:
-    from sklearn.cluster import *
-    fig = plt.figure(0, figsize=sizes[0][:-1])
-    fig.patch.set_facecolor("white")
-
-    if extra_filter == False:
-        cur_outliers = outliers
-    else:
-        cur_outliers = new_outliers
-
-    T = np.vstack([BB[cur_outliers], gg[cur_outliers], gradBB[cur_outliers], gradgg[cur_outliers], BB1V[cur_outliers]]).T
-
-    n_clust = 4
-    labels = Birch(threshold=0.3, branching_factor=50, n_clusters=n_clust).fit_predict(T)
-
-    # Number of clusters in labels, ignoring noise if present.
-    n_clusters_ = len(set(labels))
-
-    # Black removed and is used for noise instead.
-    unique_labels = np.array(list(set(labels)))
-    unique_labels = unique_labels[np.argsort([sum(labels == k) for k in unique_labels])][::-1]
-    colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
-    for i,(k, col) in enumerate(zip(unique_labels, colors)):
-        class_member_mask = (labels == k)
-
-        XX = X[cur_outliers][class_member_mask]
-        YY = Y[cur_outliers][class_member_mask]
-        plt.plot(XX,YY, 'o', markerfacecolor=tuple(col), markersize=int(n_clust*4/(n_clust - i+1)))
-
-    plt.title('Estimated number of clusters: %d' % n_clusters_)
-
 
 
 #plt.cla(); plt.plot(mines[:,0], mines[:,1], "ro"); plt.plot(X[new_outliers.T], Y[new_outliers.T], 'k+')
 
 if mpiRank == 0 and plot_results == True:
+    plt.close("all")
     fig = plt.figure(1, figsize=sizes[0][:-1])
     fig.patch.set_facecolor("white")
 
@@ -331,5 +303,5 @@ if mpiRank == 0 and plot_results == True:
         plt.contourf(x,y,new_outliers.T, levels=1)
     plt.plot(mines[:,0], mines[:,1], "ro")
 
-    plt.savefig('compare_anomalies_mines%d.eps' % region, format='eps', dpi=1200)
+    plt.savefig('compare_anomalies_mines_rev%d.eps' % region, format='eps', dpi=1200)
 
